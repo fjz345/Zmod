@@ -1,0 +1,4 @@
+displayName = Z's Mod
+author = FjZ345
+version = 0.1
+includePBD = true
