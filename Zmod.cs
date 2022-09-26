@@ -4,6 +4,5 @@ namespace Zmod
 {
 	public class Zmod : Mod
 	{
-		
 	}
 }
