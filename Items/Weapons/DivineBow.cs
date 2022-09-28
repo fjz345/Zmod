@@ -50,10 +50,6 @@ namespace Zmod.Items.Weapons
 
 		public override bool Shoot(Player player, EntitySource_ItemUse_WithAmmo source, Vector2 position, Vector2 velocity, int type, int damage, float knockback)
         {
-			// Debug Get item
-			//Rectangle rect = new Rectangle((int)player.position.X, (int)player.position.Y, 0, 0);
-			//Item.NewItem(player.GetSource_Loot(), rect, ItemID.WoodenArrow, 100);
-
 			// Default shooting
 			return true;
         }
@@ -84,45 +80,34 @@ namespace Zmod.Items.Weapons
 
 		public override string Texture => "Zmod/Resources/None";
 
-		public static Projectile FirstProj;
-		public static Vector2 TargetPosition;
-		public static Vector2 ExplodePosition;
+		public Projectile FirstProj;
+		public Vector2 TargetPosition;
+		public Vector2 ExplodePosition;
 
 		// Modify Arrow lifetime to constant time
 		public static float FirstProjLifeTime = 50;
 		public override void AI()
 		{
-			// if First projectile is alive
-			//if(FirstProj != null && FirstProj.timeLeft > 0)
-            {
-				// Timer
-				Projectile.ai[0] += 1.0f;
+			// Timer
+			Projectile.ai[0] += 1.0f;
 
-				// FirstProjectile expires
-				if(Projectile.ai[0] - 2.0f - FirstProjLifeTime >= 0)
-                {
-					// Spawn rain of arrows.
-					const float ProjectileVelocity = 30.0f;
+			// FirstProjectile expires
+			if (Projectile.ai[0] - 2.0f - FirstProjLifeTime >= 0)
+			{
+				// Spawn rain of arrows.
+				const float ProjectileVelocity = 30.0f;
 
-					// randomize within a span
-					float SpanX = 200.0f;
-					float t0 = SpanX / 2.0f;
-					float t1 = -SpanX / 2.0f;
+				// randomize within a span
+				float MaxAngle = 3.14f / 16.0f;
 
-					Vector2 VelDir0 = new Vector2(TargetPosition.X + t0, TargetPosition.Y) - ExplodePosition;
-					Vector2 VelDir1 = new Vector2(TargetPosition.X + t1, TargetPosition.Y) - ExplodePosition;
+				Vector2 VelDir = TargetPosition - ExplodePosition;
+				VelDir.Normalize();
 
-					float Angle = VelDir0.AngleTo(VelDir1);
-					float Rand = Main.rand.NextFloat(1.0f);
-					float Rand2 = Main.rand.NextFloat(1.0f);
-					float VelDirX = MathHelper.Lerp(VelDir0.X, VelDir1.X, Rand);
-					float VelDirY = MathHelper.Lerp(VelDir0.Y, VelDir1.Y, Rand2);
-					Vector2 VelDir = new Vector2(VelDirX, VelDirY);
-					VelDir.Normalize();
+				// Random dir within span
+				VelDir = VelDir.RotatedByRandom(MaxAngle);
 
-					Vector2 vel = VelDir * ProjectileVelocity;
-					Projectile.NewProjectileDirect(Projectile.GetSource_FromAI(), ExplodePosition, vel, ModContent.ProjectileType<DivineBowProjectile>(), 50, 1, Main.player[0].whoAmI);
-				}
+				Vector2 vel = VelDir * ProjectileVelocity;
+				Projectile.NewProjectileDirect(Projectile.GetSource_FromAI(), ExplodePosition, vel, ModContent.ProjectileType<DivineBowProjectile>(), 50, 1, Main.player[0].whoAmI);
 			}
 		}
 		
@@ -131,51 +116,55 @@ namespace Zmod.Items.Weapons
 		{
 			base.OnSpawn(source);
 
-			// This is a dummy projectlie. Normalize vel for future use
-			Projectile.velocity.Normalize();
-
 			Vector2 MousePos = Main.MouseWorld;
 			TargetPosition = MousePos;
-			float MinDistance = 700.0f;
-			float DistanceToMouse = MousePos.Distance(Projectile.position);
-			DistanceToMouse = MathHelper.Max(DistanceToMouse, MinDistance);
-
-			Vector2 DistFromPlayerToPop = new Vector2(0.3f, -0.4f) * DistanceToMouse;
-			// Flip if shooting other way
-			if (Projectile.velocity.X < 0.0f)
+			// Force target position min distance forward
+			const float MinXDist = 450.0f;
+			if (System.Math.Abs(TargetPosition.X - Projectile.position.X) <= MinXDist)
 			{
-				DistFromPlayerToPop.X *= -1.0f;
+				float DirSignX = Projectile.velocity.X / System.Math.Abs(Projectile.velocity.X);
+				TargetPosition.X = Projectile.position.X + MinXDist * DirSignX;
 			}
+			Vector2 SpawnPosToTargetPos = TargetPosition - Projectile.position;
+			float DistanceToMouse = SpawnPosToTargetPos.Length();
+
+			float ShootHeight = -400.0f;
+			float MaxShootX = 200.0f;
 
 			// Vectors
-			Vector2 UpVector = new Vector2(0, -1);
-			UpVector.Normalize();
-			Vector2 AimDir = MousePos - Projectile.position;
-			AimDir.Normalize();
-			Vector2 ProjDir = DistFromPlayerToPop;
+			Vector2 ProjDir0 = new Vector2(DistanceToMouse / 3.0f, ShootHeight);
+			ProjDir0.Normalize();
+			Vector2 ProjDir1 = ProjDir0;
+			ProjDir1.X *= -1.0f;
+
+			// Lerp between 2 dir cases
+			// Lerp amount depends on mouse distance
+			float ProjDirLerpAmount = SpawnPosToTargetPos.X / MaxShootX;
+			ProjDirLerpAmount = MathHelper.Clamp(ProjDirLerpAmount, 0.0f, 1.0f);
+			Vector2 ProjDir = new Vector2(MathHelper.Lerp(ProjDir1.X, ProjDir0.X, ProjDirLerpAmount), MathHelper.Lerp(ProjDir1.Y, ProjDir0.Y, ProjDirLerpAmount));
 			ProjDir.Normalize();
 
-			float ProjDirDist = (float)System.Math.Sqrt(DistFromPlayerToPop.X * DistFromPlayerToPop.X + DistFromPlayerToPop.Y * DistFromPlayerToPop.Y);
+			Vector2 DistFromPlayerToPop = ProjDir * Projectile.velocity.Length() * FirstProjLifeTime;
+
+			Main.NewText(ProjDir);
 
 			// Be at the explode position at end of lifetime
-			Vector2 vel = ProjDir * ProjDirDist / FirstProjLifeTime;
-			ExplodePosition = Projectile.position + ProjDir * ProjDirDist;
+			Vector2 vel = DistFromPlayerToPop / FirstProjLifeTime;
+			ExplodePosition = Projectile.position + DistFromPlayerToPop;
 
 			FirstProj = Projectile.NewProjectileDirect(Projectile.GetSource_FromThis(), Projectile.position, vel, ModContent.ProjectileType<DivineBowFirstProjectile>(), 50, 1, Main.player[0].whoAmI);
 
-			// Force target position min distance forward
-			const float MinSpanDist = 300.0f;
-			if(ExplodePosition.Distance(TargetPosition) <= MinSpanDist)
-            {
-				Vector2 dir = -(TargetPosition - ExplodePosition);
-				dir.Normalize();
-				TargetPosition -= dir * MinSpanDist;
-			}
+			// This is a dummy projectlie. Normalize vel for future use
+			Projectile.velocity.Normalize();
+
+			// Debug spawn target pos
+			//Projectile.NewProjectileDirect(Projectile.GetSource_FromThis(), TargetPosition, new Vector2(0.0f), ModContent.ProjectileType<DivineBowFirstProjectile>(), 0, 0, Main.player[0].whoAmI);
+			// Debug spawn explode pos
+			//Projectile.NewProjectileDirect(Projectile.GetSource_FromThis(), ExplodePosition, new Vector2(0.0f), ModContent.ProjectileType<DivineBowFirstProjectile>(), 0, 0, Main.player[0].whoAmI);
 		}
 
 		public override void Kill(int timeLeft)
 		{
-			FirstProj = null;
 		}
 	}
 
